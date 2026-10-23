@@ -139,6 +139,12 @@ namespace HSaiHelper.Hdt
 		/// <summary>Предел высоты на экране (пиксели оверлея): ниже края экрана окно не уходит — содержимое прокручивается.</summary>
 		public void SetMaxScreenHeight(double pixels)
 		{
+			// Окно ещё не размещено (Canvas.Top = NaN) или размер оверлея неизвестен — предела нет (1.2.0 падал здесь: «не число»).
+			if(double.IsNaN(pixels) || double.IsInfinity(pixels))
+			{
+				_root.MaxHeight = double.PositiveInfinity;
+				return;
+			}
 			var scale = Math.Max(0.1, _scale.ScaleY);
 			_root.MaxHeight = Math.Max(80, pixels / scale);
 		}

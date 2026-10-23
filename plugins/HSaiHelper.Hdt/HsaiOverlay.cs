@@ -144,7 +144,20 @@ namespace HSaiHelper.Hdt
 		/// столбиком у правого края, друг под другом без наложений (сдвигаются, когда соседнее окно выросло или свернулось).
 		/// Перетащенное окно помнит своё место и в столбике не участвует.
 		/// </summary>
+		/// <summary>Раскладка вызывается часто (смена размера окон) — ошибка в ней не должна всплывать в HDT красным окном.</summary>
 		private void Layout()
+		{
+			try
+			{
+				LayoutCore();
+			}
+			catch(Exception ex)
+			{
+				Paths.Log("Overlay.Layout: " + ex.Message);
+			}
+		}
+
+		private void LayoutCore()
 		{
 			double width = Core.OverlayWindow?.Width ?? 1920, height = Core.OverlayWindow?.Height ?? 1080;
 			if(_lobby.Docked)
