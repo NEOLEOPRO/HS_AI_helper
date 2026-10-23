@@ -258,8 +258,8 @@ namespace HSaiHelper.Hdt
 			public double Power;
 			public double? Win;
 			public string Result;
-			/// <summary>Мой стол перед боем — для разбора партии ИИ: «Имя 12/14 зол., …».</summary>
-			public string Board;
+			/// <summary>Мой стол перед боем (дамп BobsBuddy) — для разбора партии ИИ; названия — в момент вопроса, на языке ответа.</summary>
+			public JArray Board;
 			public int Tier;
 		}
 
@@ -307,12 +307,7 @@ namespace HSaiHelper.Hdt
 				Win = (double?)record["output"]?["winRate"],
 				Result = (string)record["result"],
 				Tier = (int?)record["input"]?["Player"]?["Tier"] ?? 0,
-				Board = string.Join(", ", side.OfType<JObject>().Select(m =>
-				{
-					var id = (string)m["CardID"];
-					var name = id != null && HearthDb.Cards.All.TryGetValue(id, out var c) ? c.GetLocName(L.CardLocale) ?? c.Name : (string)m["minionName"];
-					return $"{name} {(int?)m["baseAttack"]}/{(int?)m["baseHealth"]}" + ((bool?)m["golden"] == true ? " golden" : "");
-				})),
+				Board = side,
 			};
 			lock(Lock)
 				Rounds[turn] = round;
@@ -340,7 +335,15 @@ namespace HSaiHelper.Hdt
 			var sb = new System.Text.StringBuilder();
 			sb.AppendLine("My game by turn (tier · my board before combat · result · BobsBuddy win chance in combat):");
 			foreach(var r in rounds)
-				sb.AppendLine($"  turn {r.Turn} · t{r.Tier} · {r.Board} · {r.Result?.ToLowerInvariant()} · {r.Win:P0}");
+			{
+				var board = string.Join(", ", (r.Board ?? new JArray()).OfType<JObject>().Select(m =>
+				{
+					var id = (string)m["CardID"];
+					var name = id != null && HearthDb.Cards.All.TryGetValue(id, out var c) ? c.GetLocName(L.CardLocale) ?? c.Name : (string)m["minionName"];
+					return $"{name} {(int?)m["baseAttack"]}/{(int?)m["baseHealth"]}" + ((bool?)m["golden"] == true ? " golden" : "");
+				}));
+				sb.AppendLine($"  turn {r.Turn} · t{r.Tier} · {board} · {r.Result?.ToLowerInvariant()} · {r.Win:P0}");
+			}
 			return sb.ToString();
 		}
 

@@ -8,6 +8,7 @@
     py -I tools/import_exports.py <папка с zip или файлы zip>
 """
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -23,6 +24,9 @@ def check(record):
     for f in ("rating", "rating_after"):
         if isinstance(record.get(f), int):
             return "есть точный MMR"
+    for f in ("context", "question", "answer", "reasoning", "text"):
+        if isinstance(record.get(f), str) and re.search(r"MMR\s*\d{3,5}(?!\d|–)", record[f]):
+            return "точный MMR в тексте"
     return None
 
 

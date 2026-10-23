@@ -159,7 +159,7 @@ namespace HSaiHelper.Hdt
 
 		private void LayoutCore()
 		{
-			double width = Core.OverlayWindow?.Width ?? 1920, height = Core.OverlayWindow?.Height ?? 1080;
+			double width = OverlayPanel.OverlayWidth, height = OverlayPanel.OverlayHeight;
 			if(_lobby.Docked)
 				_lobby.PlaceDocked(0.17 * width, 0.105 * height);
 			double top = 0.09 * height, gap = 0.006 * height, bottom = 0.985 * height;

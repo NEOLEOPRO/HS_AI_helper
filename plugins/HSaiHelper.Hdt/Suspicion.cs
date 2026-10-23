@@ -99,12 +99,17 @@ namespace HSaiHelper.Hdt
 
 		private static string File => Path.Combine(Paths.Cache, "field_reference.json");
 
+		/// <summary>Номер партии: расчёт, начатый в прошлой партии и закончившийся в новой, не должен попасть игроку с тем же id.</summary>
+		private static int _game;
+
 		public static void Reset()
 		{
 			lock(Lock)
 			{
+				_game++;
 				ByPlayer.Clear();
 				Expected.Clear();
+				PendingPlayers.Clear();
 			}
 		}
 
@@ -142,8 +147,12 @@ namespace HSaiHelper.Hdt
 			var candidate = BoardLibrary.SampleOf(record, "Opponent");
 			if(candidate == null || !PrecombatEstimator.Supported)
 				return;
+			int game;
 			lock(Lock)
+			{
 				PendingPlayers.Add(playerId);
+				game = _game;
+			}
 			Task.Run(async () =>
 			{
 				await Gate.WaitAsync();
@@ -164,7 +173,11 @@ namespace HSaiHelper.Hdt
 						K = (0.8 * zStrength + 0.6 * zDifficulty) / 2.33,
 					};
 					lock(Lock)
+					{
+						if(game != _game)
+							return; // уже другая партия
 						ByPlayer[playerId] = result;
+					}
 					if(result.K >= 1)
 						Flag(playerId, result, reference);
 					else
@@ -182,7 +195,8 @@ namespace HSaiHelper.Hdt
 				finally
 				{
 					lock(Lock)
-						PendingPlayers.Remove(playerId);
+						if(game == _game)
+							PendingPlayers.Remove(playerId);
 					Gate.Release();
 				}
 			});

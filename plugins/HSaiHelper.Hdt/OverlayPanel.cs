@@ -151,6 +151,13 @@ namespace HSaiHelper.Hdt
 
 		public double Top => Canvas.GetTop(_root);
 
+		/// <summary>Размер оверлея HDT; пока окно не готово, Width/Height бывают NaN или 0 — тогда 1920×1080.</summary>
+		public static double OverlayWidth => Valid(Core.OverlayWindow?.Width, 1920);
+
+		public static double OverlayHeight => Valid(Core.OverlayWindow?.Height, 1080);
+
+		private static double Valid(double? v, double fallback) => v is double x && !double.IsNaN(x) && !double.IsInfinity(x) && x > 100 ? x : fallback;
+
 		public void SetVisible(bool visible)
 		{
 			if(visible && !_attached)
@@ -170,7 +177,7 @@ namespace HSaiHelper.Hdt
 		/// <summary>Масштаб: автоподгонка по ширине оверлея (база 1920) × ползунок «Размер окон HSAI» из настроек (50–150 %).</summary>
 		public void ApplyScale()
 		{
-			var auto = Math.Max(0.75, Math.Min(1.6, (Core.OverlayWindow?.Width ?? 1920) / 1920.0));
+			var auto = Math.Max(0.75, Math.Min(1.6, OverlayWidth / 1920.0));
 			var user = Math.Max(50, Math.Min(150, Settings.Instance.PanelScale)) / 100.0;
 			_scale.ScaleX = _scale.ScaleY = auto * user;
 		}
@@ -179,7 +186,7 @@ namespace HSaiHelper.Hdt
 		public void ApplyPosition()
 		{
 			var s = State;
-			double width = Core.OverlayWindow?.Width ?? 1920, height = Core.OverlayWindow?.Height ?? 1080;
+			double width = OverlayWidth, height = OverlayHeight;
 			Canvas.SetLeft(_root, s.Left ?? (_defaultX <= 1 ? _defaultX * width : _defaultX));
 			Canvas.SetTop(_root, s.Top ?? (_defaultY <= 1 ? _defaultY * height : _defaultY));
 			_positioned = true;

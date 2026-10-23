@@ -112,7 +112,7 @@ namespace HSaiHelper.Hdt
 			bool cheaper = best != current && current.Gold - best.Gold >= SwitchGap;
 			if(cheaper)
 				why.Insert(0, L.T($"«{best.Guide.Name}» дешевле на ≈{current.Gold - best.Gold:F0} золота", $"\"{best.Guide.Name}\" is ≈{current.Gold - best.Gold:F0} gold cheaper"));
-			if(why.Count == 0 || best == current && current.Exhausted.Count == 0)
+			if(why.Count == 0)
 				return null;
 			if(best == current)
 				return "⚠ " + L.T("Сборка под угрозой: ", "Build at risk: ") + string.Join("; ", why);

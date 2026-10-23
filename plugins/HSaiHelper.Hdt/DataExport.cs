@@ -119,6 +119,19 @@ namespace HSaiHelper.Hdt
 				}
 			if(r["key"] is JValue key && key.Type == JTokenType.String)
 				r["key"] = Hash(salt + (string)key);
+			// Сводка партии в обмене с ИИ — тоже без точного MMR: «MMR 3726» → «MMR 3500–3999»; в старых записях (до 1.2.0) у каждого
+			// игрока в конце строки был его MMR из таблицы лидеров («· 6543 ← me») — убираем совсем.
+			foreach(var field in new[] { "context", "question", "answer", "reasoning", "text" })
+				if(r[field] is JValue t && t.Type == JTokenType.String)
+				{
+					var text = System.Text.RegularExpressions.Regex.Replace((string)t, @"MMR\s*(\d{3,5})", m =>
+					{
+						int bucket = int.Parse(m.Groups[1].Value) / 500 * 500;
+						return $"MMR {bucket}–{bucket + 499}";
+					});
+					text = System.Text.RegularExpressions.Regex.Replace(text, @"·\s*\d{3,5}\??(?=\s*(←|$))", "·", System.Text.RegularExpressions.RegexOptions.Multiline);
+					r[field] = text;
+				}
 		}
 
 		private static string Hash(string s)
