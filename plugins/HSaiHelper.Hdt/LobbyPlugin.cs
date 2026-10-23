@@ -101,6 +101,7 @@ namespace HSaiHelper.Hdt
 				if(inGame && !_wasInGame)
 					NewGame();
 				_wasInGame = inGame;
+				Suspicion.InGame = inGame;
 				if(inGame)
 					_showLastGame = true;
 				else if(!Core.Game.IsInMenu && !Core.Game.IsBattlegroundsMatch)
@@ -110,6 +111,8 @@ namespace HSaiHelper.Hdt
 					AiServer.EnsureRunning(); // локальный ИИ подключается сам, если установлен
 				if(!inGame)
 				{
+					if(bgMenu || _showLastGame)
+						Suspicion.WarmUp(); // эталоны подозрительности — вне партии, чтобы в партии считать только стол соперника
 					if(_showLastGame || bgMenu)
 					{
 						var view = BuildView(gameOver: _showLastGame);
@@ -286,7 +289,15 @@ namespace HSaiHelper.Hdt
 				var gift = BoardNow.DarkGiftText(_turn);
 				if(gift != null)
 					view.Lines.Add(gift);
-				view.Pool.AddRange(PoolLines());
+				// Ошибка в одном разделе не должна останавливать обновление всей панели.
+				try
+				{
+					view.Pool.AddRange(PoolLines().ToList());
+				}
+				catch(Exception ex)
+				{
+					Paths.Log("PoolLines: " + ex.Message);
+				}
 			}
 			view.Review.AddRange(GameReview.Lines(gameOver));
 			return view;
@@ -467,7 +478,7 @@ namespace HSaiHelper.Hdt
 			// Коротко (вызывается внутри L.InEnglish): по строке на игрока, самая вероятная сборка, подозрительность — без пояснений.
 			var sb = new System.Text.StringBuilder();
 			sb.AppendLine($"Turn {_turn}" + (gameOver ? " (game over)" : "") + $"; lobby tribes: {string.Join(", ", _lobbyRaces)}; MMR {Core.Game.CurrentBattlegroundsRating?.ToString() ?? "?"}");
-			sb.AppendLine("Players (place. hero · tier · health+armor · tribes · streak):");
+			sb.AppendLine("Players (place. hero · tier · health+armor · tribes · streak; quil = quilboar, drag = dragon, elem = elemental, aber = aberration, murl = murloc, all = all types):");
 			var tiles = LobbyState.Players?.OfType<JObject>().ToList() ?? new List<JObject>();
 			foreach(var r in view.Rows)
 			{
@@ -487,6 +498,8 @@ namespace HSaiHelper.Hdt
 			}
 			if(!gameOver)
 				sb.Append(BoardNow.Text(_turn)); // стол, рука, таверна, золото; в бою — стол соперника и прогноз BobsBuddy
+			else if(GameReview.TurnsForAi() is string turns)
+				sb.Append(turns); // разбор партии: как рос мой стол, где бои шли против прогноза
 			var heroes = BoardNow.LobbyHeroes(); // силы героев и безделушки всех игроков лобби
 			if(heroes != null)
 				sb.Append(heroes);
@@ -515,7 +528,9 @@ namespace HSaiHelper.Hdt
 			{
 				cards = seen.Value;
 				source = L.T($"стол видели на ходу {seen.Key}: {cards.Count} карт", $"board seen on turn {seen.Key}: {cards.Count} cards");
-				if(Suspicion.Of(id) is var sus && sus != null)
+				if(Suspicion.Pending(id))
+					yield return L.T("Подозрительность: считаю (бои BobsBuddy против столов этого хода)…", "Suspicion: calculating (BobsBuddy fights vs this turn's boards)…");
+				else if(Suspicion.Of(id) is var sus && sus != null)
 					yield return L.T($"Подозрительность: {sus.K:F1} (ход {sus.Turn}: сила {sus.KStrength:F1} — поле нужно усилить ×{Math.Pow(2, sus.Strength):F1}; сложность сбора {sus.KDifficulty:F1}; 1,0 — порог ≈ 1 из 100; не обвинение)",
 						$"Suspicion: {sus.K:F1} (turn {sus.Turn}: strength {sus.KStrength:F1} — the field needs ×{Math.Pow(2, sus.Strength):F1} stats; assembly difficulty {sus.KDifficulty:F1}; 1.0 — threshold ≈ 1 in 100; not an accusation)");
 			}

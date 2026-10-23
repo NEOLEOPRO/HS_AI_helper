@@ -160,7 +160,7 @@ namespace HSaiHelper.Hdt
 					var line = new StringBuilder($"  {CardName(h.CardId)}");
 					if(HearthDb.Cards.All.TryGetValue(h.CardId, out var card) && card.Entity.GetTag(GameTag.HERO_POWER) is int hp && hp > 0
 					   && HearthDb.Cards.AllByDbfId.TryGetValue(hp, out var power))
-						line.Append($" — hero power «{power.GetLocName(Locale.enUS) ?? power.Name}»: {CardText(power.Id)}");
+						line.Append($" — hero power «{power.GetLocName(L.CardLocale) ?? power.Name}»: {CardText(power.Id)}");
 					foreach(var tag in new[] { GameTag.BACON_FIRST_TRINKET_DATABASE_ID, GameTag.BACON_SECOND_TRINKET_DATABASE_ID })
 						if(h.GetTag(tag) is int t && t > 0)
 							line.Append("; trinket " + DbfText(t));
@@ -175,7 +175,7 @@ namespace HSaiHelper.Hdt
 		}
 
 		private static string DbfText(int dbf) =>
-			HearthDb.Cards.AllByDbfId.TryGetValue(dbf, out var c) ? $"«{c.GetLocName(Locale.enUS) ?? c.Name}»: {CardText(c.Id)}" : $"#{dbf}";
+			HearthDb.Cards.AllByDbfId.TryGetValue(dbf, out var c) ? $"«{c.GetLocName(L.CardLocale) ?? c.Name}»: {CardText(c.Id)}" : $"#{dbf}";
 
 		private static List<Entity> Minions(IEnumerable<Entity> board) =>
 			board.Where(e => e.IsMinion).OrderBy(e => e.GetTag(GameTag.ZONE_POSITION)).ToList();
@@ -200,7 +200,7 @@ namespace HSaiHelper.Hdt
 		}
 
 		private static string CardName(string cardId) =>
-			cardId != null && HearthDb.Cards.All.TryGetValue(cardId, out var c) ? c.GetLocName(Locale.enUS) ?? c.Name ?? cardId : cardId ?? "?";
+			cardId != null && HearthDb.Cards.All.TryGetValue(cardId, out var c) ? c.GetLocName(L.CardLocale) ?? c.Name ?? cardId : cardId ?? "?";
 
 		/// <summary>Текст карты без разметки ([x], &lt;b&gt;, переносов); числа-заглушки {0} заменяются на «X».</summary>
 		private static string CardText(string cardId)

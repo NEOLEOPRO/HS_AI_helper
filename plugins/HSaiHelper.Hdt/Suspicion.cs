@@ -53,6 +53,49 @@ namespace HSaiHelper.Hdt
 			[9] = (0.603, 0.092), [10] = (0.743, 0.121), [11] = (0.938, 0.252), [12] = (0.762, 0.168), [13] = (1.083, 0.193),
 		};
 		private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
+		private static readonly HashSet<int> PendingPlayers = new HashSet<int>();
+		private static Task _warmUp;
+
+		/// <summary>Идёт партия: предрасчёт эталонов прерывается (в партии — только быстрая проверка стола соперника, 2 потока).</summary>
+		public static volatile bool InGame;
+
+		/// <summary>Стол игрока уже записан, подозрительность считается.</summary>
+		public static bool Pending(int playerId)
+		{
+			lock(Lock)
+				return PendingPlayers.Contains(playerId);
+		}
+
+		/// <summary>
+		/// Вне партии (меню BG, после партии): эталоны ходов 3–15, которых нет или которые устарели (столов хода стало на четверть больше),
+		/// 4 потока. В партии эталон берётся готовый — иначе (1.2.1) поздние ходы ждали эталона до конца партии.
+		/// </summary>
+		public static void WarmUp()
+		{
+			if(InGame || !PrecombatEstimator.Supported || !BoardLibrary.Loaded || _warmUp?.IsCompleted == false)
+				return;
+			_warmUp = Task.Run(async () =>
+			{
+				for(int turn = 3; turn <= 15 && !InGame; turn++)
+				{
+					await Gate.WaitAsync();
+					try
+					{
+						var field = BoardLibrary.FieldSample(turn, FieldSize).Select(f => f.Sample).ToList();
+						if(field.Count >= 6)
+							ReferenceFor(turn, field, allowStale: false, threads: 4);
+					}
+					catch(Exception ex)
+					{
+						Paths.Log("Suspicion.WarmUp: " + ex.Message);
+					}
+					finally
+					{
+						Gate.Release();
+					}
+				}
+			});
+		}
 
 		private static string File => Path.Combine(Paths.Cache, "field_reference.json");
 
@@ -99,6 +142,8 @@ namespace HSaiHelper.Hdt
 			var candidate = BoardLibrary.SampleOf(record, "Opponent");
 			if(candidate == null || !PrecombatEstimator.Supported)
 				return;
+			lock(Lock)
+				PendingPlayers.Add(playerId);
 			Task.Run(async () =>
 			{
 				await Gate.WaitAsync();
@@ -107,10 +152,10 @@ namespace HSaiHelper.Hdt
 					var field = BoardLibrary.FieldSample(turn, FieldSize).Where(f => !ReferenceEquals(f.Sample, candidate)).Select(f => f.Sample).ToList();
 					if(field.Count < 6)
 						return;
-					var reference = ReferenceFor(turn, field);
+					var reference = ReferenceFor(turn, field, allowStale: true, threads: Threads);
 					if(reference == null)
 						return;
-					var strength = Strength(candidate, field, turn);
+					var strength = Strength(candidate, field, turn, Threads);
 					double zStrength = (strength - reference.Mean) / reference.Sd;
 					double zDifficulty = DifficultyZ(candidate, others, turn);
 					var result = new Result
@@ -122,6 +167,13 @@ namespace HSaiHelper.Hdt
 						ByPlayer[playerId] = result;
 					if(result.K >= 1)
 						Flag(playerId, result, reference);
+					else
+					{
+						var tile = LobbyState.Players?.OfType<JObject>().FirstOrDefault(t => (int?)t["player_id"] == playerId);
+						var name = tile == null ? "?" : LobbyState.HeroName((string)tile["hero"]);
+						ActivityFeed.Post(L.T($"Ход {turn}: подозрительность {name} — {result.K:F1} (сила {result.KStrength:F1}, сложность сбора {result.KDifficulty:F1})",
+							$"Turn {turn}: suspicion {name} — {result.K:F1} (strength {result.KStrength:F1}, assembly difficulty {result.KDifficulty:F1})"));
+					}
 				}
 				catch(Exception ex)
 				{
@@ -129,6 +181,8 @@ namespace HSaiHelper.Hdt
 				}
 				finally
 				{
+					lock(Lock)
+						PendingPlayers.Remove(playerId);
 					Gate.Release();
 				}
 			});
@@ -174,16 +228,16 @@ namespace HSaiHelper.Hdt
 		}
 
 		/// <summary>Эталон хода: из файла, если столов с тех пор прибавилось меньше чем на четверть; иначе — пересчёт (12 поисков).</summary>
-		private static Reference ReferenceFor(int turn, List<BoardSample> field)
+		private static Reference ReferenceFor(int turn, List<BoardSample> field, bool allowStale, int threads)
 		{
 			int boards = BoardLibrary.CountForTurn(turn);
 			lock(Lock)
 			{
 				_references ??= Load();
-				if(_references.TryGetValue(turn, out var cached) && boards < cached.Boards * 1.25)
+				if(_references.TryGetValue(turn, out var cached) && (allowStale || boards < cached.Boards * 1.25))
 					return cached;
 			}
-			var strengths = field.Select(b => Strength(b, field.Where(f => f != b).ToList(), turn)).Where(s => s > -Bound + 0.01).ToList();
+			var strengths = field.Select(b => Strength(b, field.Where(f => f != b).ToList(), turn, threads)).Where(s => s > -Bound + 0.01).ToList();
 			if(strengths.Count < 5)
 				return null;
 			double mean = strengths.Average();
@@ -221,14 +275,14 @@ namespace HSaiHelper.Hdt
 		}
 
 		/// <summary>Двоичный поиск log2 f в [−6, 6]: доля побед стола против поля со статами × f = 50 %.</summary>
-		private static double Strength(BoardSample board, List<BoardSample> field, int turn)
+		private static double Strength(BoardSample board, List<BoardSample> field, int turn, int threads)
 		{
 			double Share(double log2f)
 			{
 				double f = Math.Pow(2, log2f), sum = 0;
 				int n = 0;
 				foreach(var opp in field)
-					if(PrecombatEstimator.Duel(board, opp, f, turn, Iterations, Threads) is double s)
+					if(PrecombatEstimator.Duel(board, opp, f, turn, Iterations, threads) is double s)
 					{
 						sum += s;
 						n++;

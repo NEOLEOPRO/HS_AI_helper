@@ -258,6 +258,9 @@ namespace HSaiHelper.Hdt
 			public double Power;
 			public double? Win;
 			public string Result;
+			/// <summary>Мой стол перед боем — для разбора партии ИИ: «Имя 12/14 зол., …».</summary>
+			public string Board;
+			public int Tier;
 		}
 
 		private static readonly object Lock = new object();
@@ -303,6 +306,13 @@ namespace HSaiHelper.Hdt
 				Power = side.Sum(m => ((int?)m["baseAttack"] ?? 0) + ((int?)m["baseHealth"] ?? 0)),
 				Win = (double?)record["output"]?["winRate"],
 				Result = (string)record["result"],
+				Tier = (int?)record["input"]?["Player"]?["Tier"] ?? 0,
+				Board = string.Join(", ", side.OfType<JObject>().Select(m =>
+				{
+					var id = (string)m["CardID"];
+					var name = id != null && HearthDb.Cards.All.TryGetValue(id, out var c) ? c.GetLocName(L.CardLocale) ?? c.Name : (string)m["minionName"];
+					return $"{name} {(int?)m["baseAttack"]}/{(int?)m["baseHealth"]}" + ((bool?)m["golden"] == true ? " golden" : "");
+				})),
 			};
 			lock(Lock)
 				Rounds[turn] = round;
@@ -314,6 +324,24 @@ namespace HSaiHelper.Hdt
 		{
 			lock(Lock)
 				return FieldByTurn.Where(kv => kv.Key >= 2).Select(kv => (kv.Key, kv.Value)).ToList();
+		}
+
+		/// <summary>
+		/// Для ИИ после партии: по ходу — тир, мой стол, исход и прогноз BobsBuddy в бою. Без этого на «что думаешь о партии»
+		/// модель пересказывала цифры с панели (2026-10-23) — теперь видит, как рос стол и где бои шли против прогноза.
+		/// </summary>
+		public static string TurnsForAi()
+		{
+			List<Round> rounds;
+			lock(Lock)
+				rounds = Rounds.Values.ToList();
+			if(rounds.Count == 0)
+				return null;
+			var sb = new System.Text.StringBuilder();
+			sb.AppendLine("My game by turn (tier · my board before combat · result · BobsBuddy win chance in combat):");
+			foreach(var r in rounds)
+				sb.AppendLine($"  turn {r.Turn} · t{r.Tier} · {r.Board} · {r.Result?.ToLowerInvariant()} · {r.Win:P0}");
+			return sb.ToString();
 		}
 
 		public static IEnumerable<string> Lines(bool gameOver)

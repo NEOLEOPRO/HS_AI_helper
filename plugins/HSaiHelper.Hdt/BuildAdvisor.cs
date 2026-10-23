@@ -175,6 +175,8 @@ namespace HSaiHelper.Hdt
 
 		private static double UpgradeGold(int tier, int needTier, int currentCost)
 		{
+			// Тир ещё не прочитан (0) — считаем с 1-го (1.2.1 падал здесь: индекс −1, вся панель не обновлялась).
+			tier = Math.Max(1, tier);
 			double gold = 0;
 			for(int t = tier; t < needTier && t <= BaseUpgrade.Length; t++)
 				gold += t == tier && currentCost > 0 ? currentCost : BaseUpgrade[t - 1] - 1;

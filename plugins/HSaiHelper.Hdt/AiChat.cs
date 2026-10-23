@@ -170,9 +170,16 @@ namespace HSaiHelper.Hdt
 		private static string SystemPrompt()
 		{
 			var language = Settings.Instance.AiAnswerLanguage == "ru"
-				? "Answer in Russian, using Russian Battlegrounds player terms (триплет; «Яд» is permanent poison, «Токсичность» is venomous — removed after the first hit)."
+				? "Answer in Russian, using Russian Battlegrounds player terms (триплет; «Яд» is permanent poison, «Токсичность» is venomous — removed after the first hit). " +
+				  "Card and hero names in the game state are already in Russian — use them exactly. Tribes in Russian: beast — звери, demon — демоны, dragon — драконы, " +
+				  "elemental — элементали, mech — механизмы, murloc — мурлоки, naga — наги, pirate — пираты, quilboar — свинобразы, undead — нежить, aberration — аберрации."
 				: "Answer in English.";
-			var role = "You are an AI assistant for a Hearthstone Battlegrounds player. Answer briefly (2–5 sentences) and to the point. " +
+			var role = "You are an AI assistant for a strong Hearthstone Battlegrounds player (high MMR). Answer briefly (2–5 sentences). " +
+					   // «Говорит очевидные вещи» (2026-10-23): сильному игроку не нужен пересказ цифр с панели.
+					   "Do not restate numbers the player already sees on the panel and skip generic advice. Give 1–3 specific, non-obvious points " +
+					   "tied to the actual cards, heroes, tavern offers and opponents in the game state (what to buy, sell or keep, when to level or roll, " +
+					   "which opponent is the threat and why, board order). If the standard move is right, say it in one sentence. " +
+					   "Name a build or archetype only as given in the game state (likely build / tribes); never invent one; if unclear, say so. " +
 					   "Take numbers (odds, damage, percentages) only from the game state — they come from the simulator and statistics; never invent or recompute them. " +
 					   "If the data is not enough, say so. " +
 				   // Риск и награда: MMR сильно награждает верхние места, поэтому выбор линии зависит от положения.

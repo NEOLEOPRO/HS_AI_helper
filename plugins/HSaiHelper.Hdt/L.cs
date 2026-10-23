@@ -56,8 +56,11 @@ namespace HSaiHelper.Hdt
 
 		public static string T(string ru, string en) => En ? en : ru;
 
-		/// <summary>Язык названий карт и героев.</summary>
-		public static Locale CardLocale => En ? Locale.enUS : Locale.ruRU;
+		/// <summary>
+		/// Язык названий карт и героев. В сводке для ИИ (InEnglish) — язык ответа: ответ по-русски должен называть карты и героев
+		/// так, как их видит игрок в русском клиенте (а не «Квиблоары»); тексты карт остаются английскими.
+		/// </summary>
+		public static Locale CardLocale => _forceEnglish ? (Settings.Instance.AiAnswerLanguage == "ru" ? Locale.ruRU : Locale.enUS) : En ? Locale.enUS : Locale.ruRU;
 
 		/// <summary>Порядковое место: «4-е» / «4th».</summary>
 		public static string Place(object place) => En ? $"{place}{Suffix(place)}" : $"{place}-е";
