@@ -295,9 +295,14 @@ namespace HSaiHelper.Hdt
 					Top4ByTurn[turn] = top4;
 		}
 
+		/// <summary>Счётчики «на всю игру» моей стороны (UndeadAttackBonus, …) из последней записи боя — для советов (Analysis).</summary>
+		public static JObject LastMyCounters;
+
 		public static void AddCombat(JObject record)
 		{
 			int turn = (int?)record["turn"] ?? 0;
+			if(record["input"]?["Player"] is JObject me)
+				LastMyCounters = new JObject(me.Properties().Where(p => p.Value.Type == JTokenType.Integer || p.Value.Type == JTokenType.Boolean));
 			if(turn <= 0 || !(record["input"]?["Player"]?["Side"] is JArray side))
 				return;
 			var round = new Round

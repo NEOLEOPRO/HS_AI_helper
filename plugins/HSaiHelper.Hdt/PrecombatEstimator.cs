@@ -22,6 +22,8 @@ namespace HSaiHelper.Hdt
 		public double Win, Tie, Loss;
 		public double MinWin, MaxWin;
 		public int Boards;
+		/// <summary>Похожие столы, по которым считали (и множитель статов) — для объяснения расхождения с точным прогнозом в бою.</summary>
+		public List<(BoardSample Sample, double Factor)> Samples = new List<(BoardSample, double)>();
 		public string Error;
 		public bool Running;
 	}
@@ -104,6 +106,7 @@ namespace HSaiHelper.Hdt
 			var settings = Settings.Instance;
 			var races = (opponent["races"] as JObject)?.Properties().ToDictionary(p => p.Name, p => (int)p.Value) ?? new Dictionary<string, int>();
 			var candidates = BoardLibrary.Similar(races, (int?)opponent["tier"] ?? 1, turn, Math.Max(1, settings.PrecombatBoards));
+			running.Samples = candidates;
 			if(candidates.Count == 0)
 			{
 				Finish(running, error: L.T("мало записанных столов для этого хода", "not enough recorded boards for this turn"));
@@ -195,7 +198,7 @@ namespace HSaiHelper.Hdt
 		/// <summary>
 		/// Сумма «атака + здоровье» обманывает: нежить с перерождениями, щиты, хрипы (2026-10-23; по 142 записанным боям
 		/// столы с ≥ 3 нежити выигрывали заметно чаще, чем «по статам»: р11 340 против 1599 — победа 99,8 %). Поэтому сила стола —
-		/// BobsBuddy: мой стол против 12 записанных столов раунда, взятых равномерно от слабых к сильным. Запуск из UI-потока.
+		/// BobsBuddy: мой стол против всех записанных столов хода (до boards; меньше — равномерно от слабых к сильным). Запуск из UI-потока.
 		/// </summary>
 		public static void StartField(int turn, JObject me, List<Race> lobbyRaces, string signature, int boards = 12, int iterations = 300)
 		{

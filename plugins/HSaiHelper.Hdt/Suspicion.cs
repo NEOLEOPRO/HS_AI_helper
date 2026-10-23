@@ -126,13 +126,14 @@ namespace HSaiHelper.Hdt
 		/// </summary>
 		public static void Expect(int turn, int playerId, List<string> others)
 		{
-			if(turn >= 3 && playerId > 0)
+			if(turn >= 1 && playerId > 0)
 				lock(Lock)
 					Expected[turn] = (playerId, others ?? new List<string>());
 		}
 
 		/// <summary>Запись боя от Recorder (уже добавлена в BoardLibrary): считаем подозрительность стола соперника в фоне.</summary>
-		public static void OnCombat(JObject record)
+		/// <summary>candidate — стол соперника, если запись ещё не в библиотеке (разбор прямо в бою).</summary>
+		public static void OnCombat(JObject record, BoardSample candidate = null)
 		{
 			int turn = (int?)record["turn"] ?? 0;
 			int playerId;
@@ -144,8 +145,11 @@ namespace HSaiHelper.Hdt
 				Expected.Remove(turn);
 				(playerId, others) = expected;
 			}
-			var candidate = BoardLibrary.SampleOf(record, "Opponent");
-			if(candidate == null || !PrecombatEstimator.Supported)
+			candidate ??= BoardLibrary.SampleOf(record, "Opponent");
+			if(candidate != null)
+				Analysis.SetLastBoard(playerId, candidate);
+			// Ходы 1–2 (одно-два существа) не оцениваем.
+			if(candidate == null || turn < 3 || !PrecombatEstimator.Supported)
 				return;
 			int game;
 			lock(Lock)

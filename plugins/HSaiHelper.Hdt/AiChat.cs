@@ -11,7 +11,8 @@ using Core = Hearthstone_Deck_Tracker.API.Core;
 
 namespace HSaiHelper.Hdt
 {
-	internal enum ChatRole { Me, Ai, Note, System }
+	/// <summary>Advice — ответ на автоматический запрос (совет на ход, «как обыграть»): выделяется на панели.</summary>
+	internal enum ChatRole { Me, Ai, Note, System, Advice }
 
 	internal class ChatItem
 	{
@@ -87,7 +88,43 @@ namespace HSaiHelper.Hdt
 			Task.Run(() => Ask(text, context, history));
 		}
 
-		private static async Task Ask(string question, string context, List<ChatItem> history)
+		/// <summary>
+		/// Автоматический запрос без набора в чате (галочка «советы ИИ», кнопка «как обыграть»): заголовок на панели, вопрос и числа
+		/// (посчитанные кодом) — к сводке партии. Если ИИ занят — молча пропускаем (совет на ход придёт в следующий раз).
+		/// Из любого потока: сводку партии собираем в UI-потоке.
+		/// </summary>
+		public static void SubmitAuto(string title, string question, string facts)
+		{
+			lock(Lock)
+			{
+				if(_busy)
+					return;
+				_busy = true;
+			}
+			var dispatcher = System.Windows.Application.Current?.Dispatcher;
+			dispatcher?.BeginInvoke(new Action(() =>
+			{
+				string context = null;
+				try
+				{
+					context = ContextProvider?.Invoke();
+				}
+				catch(Exception ex)
+				{
+					Paths.Log("AiChat.Context: " + ex);
+				}
+				Add(ChatRole.System, "⚑ " + title + L.T(" — считаю…", " — thinking…"));
+				Task.Run(() => Ask(question, (context ?? "") + "\n" + facts, new List<ChatItem>(), advice: true));
+			}));
+			if(dispatcher == null)
+				lock(Lock)
+					_busy = false;
+		}
+
+		/// <summary>Служебная строка в окне «ИИ» (из любого потока).</summary>
+		public static void SystemNote(string text) => Add(ChatRole.System, text);
+
+		private static async Task Ask(string question, string context, List<ChatItem> history, bool advice = false)
 		{
 			var started = DateTime.Now;
 			ActivityFeed.Post(L.T("ИИ думает над вопросом…", "The AI is thinking…"));
@@ -95,7 +132,7 @@ namespace HSaiHelper.Hdt
 			{
 				var messages = new JArray { new JObject { ["role"] = "system", ["content"] = SystemPrompt() } };
 				// Прошлые реплики — без сводки (она меняется), чтобы модель помнила разговор.
-				foreach(var h in history.Take(history.Count - 1))
+				foreach(var h in history.Take(Math.Max(0, history.Count - 1)))
 					messages.Add(new JObject { ["role"] = h.Role == ChatRole.Me ? "user" : "assistant", ["content"] = h.Text });
 				messages.Add(new JObject
 				{
@@ -124,7 +161,7 @@ namespace HSaiHelper.Hdt
 						"(ran out of time while reasoning — the reasoning is below; ask a shorter question or turn reasoning off)");
 				if(string.IsNullOrEmpty(answer))
 					throw new InvalidOperationException((string)json["error"]?["message"] ?? "пустой ответ");
-				Add(ChatRole.Ai, answer, reasoning);
+				Add(advice ? ChatRole.Advice : ChatRole.Ai, answer, reasoning);
 				// Полный обмен — сырьё для «учителя → ученика»: большая модель потом ответит на тот же вопрос с той же сводкой (tools/teacher.py).
 				RecorderPlugin.Write(new JObject
 				{
@@ -180,6 +217,13 @@ namespace HSaiHelper.Hdt
 					   "tied to the actual cards, heroes, tavern offers and opponents in the game state (what to buy, sell or keep, when to level or roll, " +
 					   "which opponent is the threat and why, board order). If the standard move is right, say it in one sentence. " +
 					   "Name a build or archetype only as given in the game state (likely build / tribes); never invent one; if unclear, say so. " +
+					   // Правила — в текстах карт и описаниях гайдов: модель сама выводит из них взаимодействия и противодействие.
+					   "Card texts and the build guides in the game state define how things work (a Battlecry triggers when played in the tavern, " +
+					   "a Deathrattle when the minion dies, etc.) — the player knows these basics, so do not explain them; use them to find interactions: " +
+					   "which key cards the opponent's build likely runs even if not seen yet (e.g. a deathrattle undead or beast build usually has Titus Rivendare — kill it first), " +
+					   "what to kill first, how to order the board against them, what to buy to counter them. " +
+					   "Give board-order advice only from the reorder numbers in the state (minions attack left to right; do not guess). " +
+					   "Buying a key card of the opponent's build also takes a copy out of the shared pool — say so when that is the reason. " +
 					   "Take numbers (odds, damage, percentages) only from the game state — they come from the simulator and statistics; never invent or recompute them. " +
 					   "If the data is not enough, say so. " +
 				   // Риск и награда: MMR сильно награждает верхние места, поэтому выбор линии зависит от положения.

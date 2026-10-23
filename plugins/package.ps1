@@ -14,6 +14,9 @@ Copy-Item (Join-Path $PSScriptRoot '..\data\reference\core_rules_en.md') $dist
 # Стартовый набор столов (tools/build_seed_boards.py) — шансы до боя и сила стола с первой партии.
 $seed = Join-Path $PSScriptRoot '..\data\reference\seed_boards.jsonl.gz'
 if (Test-Path $seed) { Copy-Item $seed $dist }
+# Заметки о ключевых картах (tools/key_cards.py build).
+$keys = Join-Path $PSScriptRoot '..\data\reference\key_cards.json'
+if (Test-Path $keys) { Copy-Item $keys $dist }
 Copy-Item (Join-Path $PSScriptRoot 'release\*') $dist
 $zip = "$dist.zip"
 if (Test-Path $zip) { Remove-Item $zip }

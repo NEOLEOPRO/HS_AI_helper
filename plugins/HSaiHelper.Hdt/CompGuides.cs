@@ -17,6 +17,18 @@ namespace HSaiHelper.Hdt
 		public string Tribe;
 		public HashSet<int> Core = new HashSet<int>();
 		public HashSet<int> Addon = new HashSet<int>();
+		/// <summary>Описание гайда из HDT («как играть», «когда переходить», «что включает сборку») — с ссылками [[Имя||dbf]].</summary>
+		public string HowToPlay, WhenToCommit, Enablers;
+
+		/// <summary>dbf карт, упомянутых в описании гайда (ключевые для сборки — их стоит ждать у соперника).</summary>
+		public IEnumerable<int> Mentioned() =>
+			System.Text.RegularExpressions.Regex.Matches((HowToPlay ?? "") + " " + (WhenToCommit ?? "") + " " + (Enablers ?? ""), @"\|\|(\d+)\]\]")
+				.Cast<System.Text.RegularExpressions.Match>().Select(m => int.Parse(m.Groups[1].Value)).Distinct();
+
+		/// <summary>Текст описания без разметки: [[Имя||dbf]] → название карты на языке L.CardLocale.</summary>
+		public static string Plain(string text) =>
+			string.IsNullOrEmpty(text) ? "" : System.Text.RegularExpressions.Regex.Replace(text, @"\[\[([^|\]]*)\|\|(\d+)\]\]", m =>
+				HearthDb.Cards.AllByDbfId.TryGetValue(int.Parse(m.Groups[2].Value), out var c) ? c.GetLocName(L.CardLocale) ?? m.Groups[1].Value : m.Groups[1].Value).Trim();
 	}
 
 	/// <summary>Насколько стол игрока похож на гайд.</summary>
@@ -90,6 +102,9 @@ namespace HSaiHelper.Hdt
 					Tribe = tribe > 0 ? Enum.GetName(typeof(Race), tribe) : null,
 					Core = new HashSet<int>((g["CoreCards"] as JArray ?? new JArray()).Select(x => (int)x)),
 					Addon = new HashSet<int>((g["AddonCards"] as JArray ?? new JArray()).Select(x => (int)x)),
+					HowToPlay = g["HowToPlay"]?.Type == JTokenType.String ? (string)g["HowToPlay"] : null,
+					WhenToCommit = g["WhenToCommit"]?.Type == JTokenType.String ? (string)g["WhenToCommit"] : null,
+					Enablers = g["CommonEnablers"]?.Type == JTokenType.String ? (string)g["CommonEnablers"] : null,
 				});
 			}
 			return list;
@@ -130,6 +145,8 @@ namespace HSaiHelper.Hdt
 			}
 			return result.Where(m => m.Percent > 0).OrderByDescending(m => m.Percent).ThenBy(m => m.Guide.TierRank).Take(count).ToList();
 		}
+
+		public static string PlainOf(string text) => CompGuide.Plain(text);
 
 		private static int Dbf(string cardId)
 		{

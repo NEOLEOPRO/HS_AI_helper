@@ -44,6 +44,9 @@ namespace HSaiHelper.Hdt
 		private readonly OverlayPanel _next;
 		private readonly OverlayPanel _estimates;
 		private readonly OverlayPanel _ai;
+		/// <summary>«Разбор сессии» — под панелью MMR дектрекера (слева), по умолчанию свёрнут.</summary>
+		private readonly OverlayPanel _session;
+		private string _sessionSignature;
 		private readonly Section _activity;
 		private readonly Section _chat;
 		private readonly Section _pool;
@@ -52,6 +55,11 @@ namespace HSaiHelper.Hdt
 		private readonly StackPanel _estimatesMain = new StackPanel();
 		private readonly TextBlock _aiToggle;
 		private readonly TextBlock _thinkToggle;
+		private readonly TextBlock _adviceToggle;
+		private readonly TextBlock _counterButton;
+
+		/// <summary>Кнопка «как обыграть самого опасного» — расчёт и запрос к ИИ делает LobbyPlugin (у него данные партии).</summary>
+		public event Action CounterplayRequested;
 		private readonly StackPanel _feed = new StackPanel();
 		private readonly StackPanel _chatList = new StackPanel();
 		private readonly TextBlock _ask;
@@ -70,6 +78,9 @@ namespace HSaiHelper.Hdt
 			_next = new OverlayPanel("next", () => L.T("⚔ Следующий соперник", "⚔ Next opponent"), 0.775, 0.09, 440, NextOpponent);
 			_estimates = new OverlayPanel("estimates", () => L.T("Оценки", "Estimates"), 0.775, 0.36, 440);
 			_ai = new OverlayPanel("ai", () => L.T("ИИ", "AI"), 0.775, 0.60, 440);
+			if(!settings.Panels.ContainsKey("session"))
+				settings.Panel("session").Collapsed = true;
+			_session = new OverlayPanel("session", () => L.T("Разбор сессии", "Session review"), 0.0, 0.43, 380);
 
 			_activity = new Section(() => L.T("Что делает ИИ", "What the AI is doing"), () => settings.ActivityCollapsed, v => { settings.ActivityCollapsed = v; settings.Save(); });
 			_chat = new Section(() => L.T("Спросить ИИ", "Ask the AI"), () => settings.CommentsCollapsed, v => { settings.CommentsCollapsed = v; settings.Save(); });
@@ -112,6 +123,22 @@ namespace HSaiHelper.Hdt
 			OverlayExtensions.SetIsOverlayHitTestVisible(_thinkToggle, true);
 			RefreshThinkToggle();
 			_ai.Content.Children.Add(_thinkToggle);
+			// Галочка «советы ИИ каждый ход»: после боя, когда таверна устоялась, — набор действий с шансами (BobsBuddy) и объяснение ИИ.
+			_adviceToggle = new TextBlock { FontFamily = Font, FontSize = 11, Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 3), Foreground = TextDim };
+			_adviceToggle.MouseLeftButtonUp += (s, e) =>
+			{
+				settings.AiAutoAdvice = !settings.AiAutoAdvice;
+				settings.Save();
+				RefreshThinkToggle();
+			};
+			OverlayExtensions.SetIsOverlayHitTestVisible(_adviceToggle, true);
+			_ai.Content.Children.Add(_adviceToggle);
+			// Кнопка: всё важное о самом опасном сопернике — сразу в ИИ, без набора в чате.
+			_counterButton = new TextBlock { FontFamily = Font, FontSize = 12, Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 4), Foreground = Accent };
+			_counterButton.MouseLeftButtonUp += (s, e) => CounterplayRequested?.Invoke();
+			OverlayExtensions.SetIsOverlayHitTestVisible(_counterButton, true);
+			_ai.Content.Children.Add(_counterButton);
+			RefreshThinkToggle();
 			_ai.Content.Children.Add(_chat.Root);
 			_ai.Content.Children.Add(_activity.Root);
 			OverlayExtensions.SetIsOverlayHitTestVisible(_activity.Header, true);
@@ -126,7 +153,18 @@ namespace HSaiHelper.Hdt
 			RefreshChat();
 		}
 
-		private IEnumerable<OverlayPanel> All => new[] { _lobby, _next, _estimates, _ai };
+		private IEnumerable<OverlayPanel> All => new[] { _lobby, _next, _estimates, _ai, _session };
+
+		/// <summary>Строки «Разбора сессии» (SessionStats) — перерисовка только при изменении.</summary>
+		public void SetSession(List<string> lines)
+		{
+			var signature = string.Join("\n", lines) + L.En;
+			if(signature == _sessionSignature)
+				return;
+			_sessionSignature = signature;
+			_session.Refresh();
+			FillLines(_session.Content.Children, lines.Count > 0 ? lines : new List<string> { L.T("пока нет записанных партий", "no recorded games yet") });
+		}
 
 		/// <summary>Показать/скрыть все окна (по состоянию игры). «Следующий соперник» — только когда он известен.</summary>
 		public void SetVisible(bool visible)
@@ -135,6 +173,7 @@ namespace HSaiHelper.Hdt
 			_lobby.SetVisible(visible);
 			_estimates.SetVisible(visible);
 			_ai.SetVisible(visible);
+			_session.SetVisible(visible);
 			_next.SetVisible(visible && _hasNext);
 			Layout();
 		}
@@ -430,21 +469,29 @@ namespace HSaiHelper.Hdt
 					"Placement — chance to finish top 4 / first (the bar is top 4). Checked on 7 games: better than \"everyone equal\"."),
 				L.T("Риск вылета — шанс вылететь в ближайшем бою / за 2 / за 3 боя. Высокий — пора усиливать стол; низкий — можно жадничать (повышение, экономика). Проверено: при риске ≥ 30 % вылетали в 35–46 % случаев.",
 					"Elimination risk — chance to die in the next fight / within 2 / within 3. High — strengthen the board; low — you can be greedy (level, economy). Checked: at ≥ 30% players died in 35–46% of cases."),
-				L.T("Твой стол против столов хода — BobsBuddy прогоняет его против 12 записанных столов этого хода (от слабых до сильных): перерождения, щиты, хрипы учтены.",
-					"Your board vs this turn's boards — BobsBuddy runs it against 12 recorded boards of this turn (weak to strong): reborn, shields, deathrattles included."),
-				L.T("Подозрительность (у соперника, после боя с ним) — во сколько раз сильнее записанных столов этого хода по боям BobsBuddy: 1,0 — порог «необычно сильный» (≈ 1 из 100 при честной игре). Не обвинение.",
-					"Suspicion (opponent, after the fight with them) — how much stronger than recorded boards of this turn, by BobsBuddy fights: 1.0 — the \"unusually strong\" threshold (≈ 1 in 100 for fair play). Not an accusation."),
-				L.T("Сборка и пул ≈ — какие сборки из гайдов HDT проще всего добрать (≈ золота: покупки, роллы по пулу, повышения); ★ — нужная карта сейчас в таверне; "
+				L.T("Твой стол против столов хода — BobsBuddy прогоняет его против всех записанных столов этого хода (до 60): перерождения, щиты, хрипы учтены; пересчёт — когда стол 2 с без изменений.",
+					"Your board vs this turn's boards — BobsBuddy runs it against all recorded boards of this turn (up to 60): reborn, shields, deathrattles included; recalculated once the board is unchanged for 2 s."),
+				L.T("Подозрительность (у соперника, считается в бою с ним) — во сколько раз сильнее записанных столов этого хода по боям BobsBuddy: 1,0 — порог «необычно сильный» (≈ 1 из 100 при честной игре). Не обвинение.",
+					"Suspicion (opponent, calculated during the fight with them) — how much stronger than recorded boards of this turn, by BobsBuddy fights: 1.0 — the \"unusually strong\" threshold (≈ 1 in 100 for fair play). Not an accusation."),
+				L.T("Сборка и пул ≈ — какие сборки из гайдов HDT проще всего добрать (≈ золота: покупки, роллы по пулу, повышения); золотым — нужная карта сейчас в таверне (+ — дополнительная); "
 					+ "⚠ — когда стоит сменить сборку и хватит ли золота сделать это за ход; «до триплета» — для пар.",
-					"Build & pool ≈ — which HDT guide builds are easiest to finish (≈ gold: buys, rolls by pool, upgrades); ★ — a needed card is in the tavern now; "
+					"Build & pool ≈ — which HDT guide builds are easiest to finish (≈ gold: buys, rolls by pool, upgrades); gold text — a needed card is in the tavern now (+ — add-on); "
 					+ "⚠ — when to switch builds and whether there is enough gold for it in one turn; \"for a triplet\" — for pairs."),
 				L.T($"Свернуть/развернуть все окна — {(string.IsNullOrEmpty(Settings.Instance.CollapseHotkey) ? "горячая клавиша выключена" : Settings.Instance.CollapseHotkey)} (меняется в «Настройках»). Длинное окно прокручивается колесом мыши.",
 					$"Collapse/expand all windows — {(string.IsNullOrEmpty(Settings.Instance.CollapseHotkey) ? "hotkey off" : Settings.Instance.CollapseHotkey)} (change it in Settings). A long window scrolls with the mouse wheel."),
 				L.T("Тёмный дар — тир раскопки сейчас (растёт по ходам); брать лучше на 3–5 ходу.",
 					"Dark Gift — the discover tier now (grows over turns); best taken on turns 3–5."),
 				L.T("Ход 1–3 — подсказки по симуляции BobsBuddy, а не по чужим решениям.", "Turns 1–3 — tips from BobsBuddy simulation, not from other players' choices."),
-				L.T("Окно соперника: шансы до боя — твой стол против 8 похожих записанных столов того же тира (его стол ещё не виден) — грубо; точный прогноз даёт HDT уже в бою. «Через ход» — по правилам подбора пар (проверено 502/502).",
-					"Opponent window: pre-combat odds — your board vs 8 similar recorded boards of the same tier (theirs is hidden yet) — rough; HDT gives the exact odds in combat. \"Turn after\" — by the pairing rules (checked 502/502)."),
+				L.T("Окно соперника: шансы до боя — твой стол против 16 похожих записанных столов того же тира (его стол ещё не виден) — грубо; точный прогноз даёт HDT уже в бою. «Опасные карты его сборки» — 3 карты, которые могут перевернуть бой (бить первым, токсичность, уничтожение). «Через ход» — по правилам подбора пар.",
+					"Opponent window: pre-combat odds — your board vs 16 similar recorded boards of the same tier (theirs is hidden yet) — rough; HDT gives the exact odds in combat. \"Dangerous cards of their build\" — 3 cards that can swing the fight (kill first, venomous, destroy). \"Turn after\" — by the pairing rules."),
+				L.T("В бою (как только HDT посчитал исход — дальше только анимация), если шанс до боя и прогноз в бою сильно разошлись, — почему: чем его стол отличался от похожих и что решило бой (бой без его щитов, яда, отдельного существа).",
+					"In combat (as soon as HDT has the result — the rest is animation), if the pre-combat and in-combat odds differ a lot — why: how their board differed from similar ones and what decided it (the fight without their shields, poison, a single minion)."),
+				L.T("Окно «ИИ»: «советы ИИ каждый ход» — после боя, когда таверна устоялась, ИИ даёт план хода с шансами (купить/продать/расстановка — считает BobsBuddy); «как обыграть самого опасного» — одной кнопкой, без чата.",
+					"AI window: \"AI advice every turn\" — after combat, once the tavern settles, the AI gives a plan with odds (buy/sell/order — BobsBuddy); \"how to beat the most dangerous opponent\" — one click, no chat."),
+				L.T("«Разбор сессии» (слева, под панелью MMR) — партии, среднее место, топ-4, сборки и герои по среднему месту, к какому ходу т5/т6 в топ-4 партиях и в остальных.",
+					"\"Session review\" (left, under the MMR panel) — games, average place, top 4, builds and heroes by average place, when you reached t5/t6 in top-4 games vs others."),
+				L.T("Расчёты идут, когда стол 2 с без изменений (не на каждую покупку); пока он меняется — показан прошлый результат с пометкой «пересчёт».",
+					"Calculations run once the board is unchanged for 2 s (not on every buy); while it changes, the previous result is shown marked \"recalculating\"."),
 				L.T("Разбор после партии — где сильнее всего упал шанс топ-4 и самый неудачный/удачный бой.", "Post-game review — where the top-4 chance dropped most and the unluckiest/luckiest fight."),
 			});
 		}
@@ -454,13 +501,36 @@ namespace HSaiHelper.Hdt
 			target.Clear();
 			foreach(var line in lines)
 			{
-				// «★» — карта сборки прямо сейчас в таверне (подсветка), «⚠» — стоит подумать о смене сборки.
+				// ⟦…⟧ — карта сборки прямо сейчас в таверне (цветом в перечислении), «⚠» — стоит подумать о смене сборки.
 				var trimmed = line.TrimStart();
-				var t = Text(trimmed, trimmed.StartsWith("★") ? Gold : trimmed.StartsWith("⚠") ? Warning : line.StartsWith("  ") ? TextDim : TextMain);
+				var brush = trimmed.StartsWith("⚠") ? Warning : line.StartsWith("  ") ? TextDim : TextMain;
+				var t = Text("", brush);
+				AddMarked(t, trimmed, brush);
 				t.TextWrapping = TextWrapping.Wrap;
 				if(line.StartsWith("  "))
 					t.Margin = new Thickness(8, 0, 0, 0);
 				target.Add(t);
+			}
+		}
+
+		/// <summary>Текст с подсветкой фрагментов ⟦…⟧ (золотым, полужирным).</summary>
+		private static void AddMarked(TextBlock target, string text, Brush brush)
+		{
+			target.Text = null;
+			int i = 0;
+			while(i < text.Length)
+			{
+				int open = text.IndexOf(BuildAdvisor.HighlightOpen, i);
+				int close = open < 0 ? -1 : text.IndexOf(BuildAdvisor.HighlightClose, open);
+				if(open < 0 || close < 0)
+				{
+					target.Inlines.Add(new System.Windows.Documents.Run(text.Substring(i)) { Foreground = brush });
+					break;
+				}
+				if(open > i)
+					target.Inlines.Add(new System.Windows.Documents.Run(text.Substring(i, open - i)) { Foreground = brush });
+				target.Inlines.Add(new System.Windows.Documents.Run(text.Substring(open + 1, close - open - 1)) { Foreground = Gold, FontWeight = FontWeights.SemiBold });
+				i = close + 1;
 			}
 		}
 
@@ -503,6 +573,12 @@ namespace HSaiHelper.Hdt
 			_thinkToggle.Text = Settings.Instance.AiShowReasoning
 				? L.T("☑ показывать ход мыслей (ответ дольше: +10–30 с)", "☑ show reasoning (slower: +10–30 s)")
 				: L.T("☐ показывать ход мыслей", "☐ show reasoning");
+			if(_adviceToggle != null)
+				_adviceToggle.Text = Settings.Instance.AiAutoAdvice
+					? L.T("☑ советы ИИ каждый ход (после боя: действия и шансы)", "☑ AI advice every turn (after combat: actions and odds)")
+					: L.T("☐ советы ИИ каждый ход", "☐ AI advice every turn");
+			if(_counterButton != null)
+				_counterButton.Text = L.T("⚔ как обыграть самого опасного соперника", "⚔ how to beat the most dangerous opponent");
 		}
 
 		private void RefreshToggle()
@@ -519,12 +595,21 @@ namespace HSaiHelper.Hdt
 			foreach(var c in AiChat.Latest(ChatLines))
 			{
 				var who = c.Role == ChatRole.Me ? L.T("Ты: ", "You: ") : c.Role == ChatRole.Ai ? L.T("ИИ: ", "AI: ") : c.Role == ChatRole.Note ? "✎ " : "";
-				_chatList.Children.Add(new TextBlock
+				var line = new TextBlock
 				{
-					Text = $"{c.Time:HH:mm}  {who}{c.Text}",
-					Foreground = c.Role == ChatRole.Ai ? TextMain : c.Role == ChatRole.System ? Warning : CommentBrush,
+					Text = $"{c.Time:HH:mm}  {who}{c.Text.Replace("**", "")}",
+					Foreground = c.Role == ChatRole.Ai || c.Role == ChatRole.Advice ? TextMain : c.Role == ChatRole.System ? Warning : CommentBrush,
 					FontFamily = Font, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 2),
-				});
+				};
+				if(c.Role == ChatRole.Advice)
+				{
+					// Совет на ход / «как обыграть» — пожирнее и в рамке, чтобы не потерялся среди ответов.
+					line.FontWeight = FontWeights.SemiBold;
+					line.FontSize = 13;
+					_chatList.Children.Add(new Border { Child = line, Background = OddsBackground, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 3, 6, 4), Margin = new Thickness(0, 2, 0, 3) });
+				}
+				else
+					_chatList.Children.Add(line);
 				if(!string.IsNullOrEmpty(c.Reasoning))
 				{
 					// Ход мыслей — бледнее и короче (полный — в записи партии, ai_exchange).

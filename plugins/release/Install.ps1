@@ -32,7 +32,7 @@ New-Item -ItemType Directory -Force $target | Out-Null
 
 Copy-Item (Join-Path $here 'HSaiHelper.Hdt.dll'), (Join-Path $here 'core_rules_en.md') $target -Force
 
-foreach ($optional in 'HSaiHelper.Hdt.pdb', 'seed_boards.jsonl.gz') {
+foreach ($optional in 'HSaiHelper.Hdt.pdb', 'seed_boards.jsonl.gz', 'key_cards.json') {
     if (Test-Path (Join-Path $here $optional)) { Copy-Item (Join-Path $here $optional) $target -Force }
 }
 

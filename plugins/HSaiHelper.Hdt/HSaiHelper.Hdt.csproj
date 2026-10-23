@@ -13,7 +13,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HSaiHelper.Hdt</AssemblyName>
     <RootNamespace>HSaiHelper.Hdt</RootNamespace>
-    <Version>1.2.2</Version>
+    <Version>1.3.0</Version>
     <HdtDir>$(LOCALAPPDATA)\HearthstoneDeckTracker\current</HdtDir>
   </PropertyGroup>
 

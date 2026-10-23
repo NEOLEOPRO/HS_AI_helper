@@ -25,11 +25,13 @@ namespace HSaiHelper.Hdt
 		private static string _signature;
 		private static Task _task;
 		private static List<(string CardId, double Win, double Loss)> _ranking;
+		private static readonly Settled Offers = new Settled();
 
 		public static void Reset()
 		{
 			_signature = null;
 			_ranking = null;
+			Offers.Reset();
 		}
 
 		/// <summary>Строки для окна «Оценки» и сводки ИИ на ходах 1–3 (в таверне).</summary>
@@ -69,7 +71,8 @@ namespace HSaiHelper.Hdt
 		private static void MaybeRank(List<string> offers, List<Race> lobbyRaces)
 		{
 			var signature = string.Join(",", offers.OrderBy(x => x)) + "|" + string.Join(",", lobbyRaces);
-			if(offers.Count == 0 || signature == _signature || _task?.IsCompleted == false)
+			// Таверна 2 с без изменений (после роллов — не на каждый).
+			if(offers.Count == 0 || !Offers.Check(signature) || signature == _signature || _task?.IsCompleted == false)
 				return;
 			_signature = signature;
 			_ranking = null;
@@ -99,7 +102,7 @@ namespace HSaiHelper.Hdt
 								input.availableRaces = lobbyRaces;
 							if(heroPower != null)
 								input.Player.AddHeroPower(heroPower, true, false, 0, 0, 0, null, 0, false);
-							var output = new SimulationRunner().SimulateMultiThreaded(input, 300, 1, 2000).GetAwaiter().GetResult();
+							var output = new SimulationRunner().SimulateMultiThreaded(input, 1000, 1, 3000).GetAwaiter().GetResult();
 							if(output?.simulationCount > 0)
 							{
 								win += output.winRate;

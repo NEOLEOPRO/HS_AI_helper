@@ -46,18 +46,21 @@ namespace HSaiHelper.Hdt
 		/// <summary>Показывать ход мыслей ИИ (модель рассуждает перед ответом — дольше на 10–30 с).</summary>
 		public bool AiShowReasoning { get; set; }
 
+		/// <summary>Советы ИИ каждый ход (окно «ИИ»): после боя, когда таверна устоялась, — набор действий с шансами (считает BobsBuddy).</summary>
+		public bool AiAutoAdvice { get; set; }
+
 		/// <summary>Язык интерфейса: auto (по языку карт HDT), ru, en.</summary>
 		public string Language { get; set; } = "auto";
 
 		/// <summary>Шансы до боя по похожим столам из своих записей: сколько похожих столов брать и сколько боёв считать на каждый.</summary>
 		/// <summary>8 столов поровну: на 9 партиях Брайер 0,426 против 0,465 у 4 столов (precombat_eval.py --range-size 8); веса по сходству — хуже.</summary>
-		public int PrecombatBoards { get; set; } = 8;
+		public int PrecombatBoards { get; set; } = 16;
 		public int PrecombatIterations { get; set; } = 1000;
 
 		/// <summary>Версия формата настроек — для разовых обновлений значений по умолчанию у тех, у кого файл уже есть.</summary>
 		public int SettingsVersion { get; set; }
 
-		private const int CurrentSettingsVersion = 4;
+		private const int CurrentSettingsVersion = 5;
 
 		/// <summary>Разовые обновления старых файлов настроек.</summary>
 		private void Upgrade()
@@ -81,6 +84,10 @@ namespace HSaiHelper.Hdt
 				if(PoolCopies != null && PoolCopies.Length > 0 && PoolCopies[0] == 16)
 					PoolCopies[0] = 15;
 			}
+			// v5 (1.2.2): 16 похожих столов вместо 8 — на 14 партиях (133 боя) Брайер 0,444 против 0,445, 32 — уже хуже (0,462);
+			// при той же точности оценка меньше зависит от случайного выбора столов. Считается, когда стол 2 с без изменений.
+			if(SettingsVersion < 5 && PrecombatBoards == 8)
+				PrecombatBoards = 16;
 			if(SettingsVersion != CurrentSettingsVersion)
 			{
 				SettingsVersion = CurrentSettingsVersion;

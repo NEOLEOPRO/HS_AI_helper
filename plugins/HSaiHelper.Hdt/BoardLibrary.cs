@@ -133,17 +133,28 @@ namespace HSaiHelper.Hdt
 		/// <summary>Запись боя Recorder → два стола (мой и соперника). Дуо пока не берём.</summary>
 		public static void Add(JObject record)
 		{
+			foreach(var side in new[] { "Player", "Opponent" })
+				if(MakeSample(record, side) is BoardSample sample)
+					lock(Lock)
+						Samples.Add(sample);
+		}
+
+		/// <summary>
+		/// Стол из записи боя, не добавляя в библиотеку (для разборов прямо в бою: HDT считает исход сразу, дальше — анимация).
+		/// null — дуо, призрак, пусто.
+		/// </summary>
+		public static BoardSample MakeSample(JObject record, string side)
+		{
 			if((bool?)record["duos"] == true || !(record["input"] is JObject input))
-				return;
+				return null;
 			int turn = (int?)record["turn"] ?? 0;
 			if(turn <= 0)
-				return;
-			foreach(var side in new[] { "Player", "Opponent" })
+				return null;
 			{
 				if(!(input[side] is JObject player) || side == "Opponent" && (bool?)player["HeroIsKelThuzad"] == true)
-					continue;
+					return null;
 				if(!(player["Side"] is JArray minions) || minions.Count == 0)
-					continue;
+					return null;
 				// Как в таблице лидеров игры: существо двух типов считается в обоих.
 				var races = new Dictionary<string, int>();
 				double power = 0;
@@ -156,12 +167,11 @@ namespace HSaiHelper.Hdt
 				}
 				int typed = races.Where(kv => kv.Key != "ALL").Sum(kv => kv.Value);
 				var counters = new JObject(player.Properties().Where(p => p.Value.Type == JTokenType.Integer || p.Value.Type == JTokenType.Boolean));
-				lock(Lock)
-					Samples.Add(new BoardSample
-					{
-						Turn = turn, Tier = (int?)player["Tier"] ?? 0, Races = races, Typed = typed, Power = power, Minions = minions, Player = counters,
-						Key = $"{(string)record["key"]}|{side}",
-					});
+				return new BoardSample
+				{
+					Turn = turn, Tier = (int?)player["Tier"] ?? 0, Races = races, Typed = typed, Power = power, Minions = minions, Player = counters,
+					Key = $"{(string)record["key"]}|{side}",
+				};
 			}
 		}
 
@@ -172,6 +182,16 @@ namespace HSaiHelper.Hdt
 				var v = g.Select(s => s.Power).OrderBy(x => x).ToList();
 				return Math.Max(1, v[v.Count / 2]);
 			});
+
+		/// <summary>Во сколько раз статы стола хода fromTurn нужно умножить, чтобы сравнить его с ходом toTurn (по медианам); 1 — нет данных.</summary>
+		public static double Factor(int fromTurn, int toTurn)
+		{
+			List<BoardSample> all;
+			lock(Lock)
+				all = Samples.ToList();
+			var curve = Curve(all);
+			return fromTurn == toTurn ? 1 : curve.TryGetValue(toTurn, out var a) && curve.TryGetValue(fromTurn, out var b) && b > 0 ? a / b : 1;
+		}
 
 		/// <summary>Медиана силы стола (атака + здоровье) в этом раунде по всем записанным столам; 0 — данных нет.</summary>
 		public static double MedianPower(int turn)

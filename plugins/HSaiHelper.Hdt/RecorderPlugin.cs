@@ -46,6 +46,8 @@ namespace HSaiHelper.Hdt
 		private static readonly MethodInfo LethalResultMethod = InvokerType?.GetMethod("GetLastLethalResult", Any);
 
 		private readonly HashSet<string> _saved = new HashSet<string>();
+		/// <summary>Бои, уже разобранные прямо в бою (Analysis.OnLiveCombat) — ключи боёв HDT уникальны, поэтому без сброса.</summary>
+		private readonly HashSet<string> _analyzedLive = new HashSet<string>();
 		private bool _enabled;
 		private DateTime _lastCheck = DateTime.MinValue;
 		private bool _wasInGame;
@@ -345,7 +347,26 @@ namespace HSaiHelper.Hdt
 				var state = StateProp?.GetValue(invoker)?.ToString() ?? "";
 				var finished = state.StartsWith("Shopping") || state.StartsWith("GameOver");
 				if(!finished && !includeCurrent)
+				{
+					// Бой ещё идёт, но HDT уже посчитал его — разборы сейчас (исход известен сразу, дальше анимация). В файл пишем после боя, как раньше.
+					if(!_analyzedLive.Contains(key) && InputField.GetValue(invoker) is object liveInput && OutputProp.GetValue(invoker) is object liveOutput)
+					{
+						_analyzedLive.Add(key);
+						try
+						{
+							Analysis.OnLiveCombat(new JObject
+							{
+								["type"] = "combat", ["key"] = key, ["turn"] = TurnField?.GetValue(invoker) as int?, ["duos"] = Core.Game.IsBattlegroundsDuosMatch,
+								["input"] = ObjectDump.Dump(liveInput, depth: 4), ["output"] = ObjectDump.Dump(liveOutput, depth: 0),
+							});
+						}
+						catch(Exception ex)
+						{
+							Paths.Log("Recorder.Live: " + ex.Message);
+						}
+					}
 					continue;
+				}
 				var input = InputField.GetValue(invoker);
 				var output = OutputProp.GetValue(invoker);
 				// Без прогноза — это прошедшие раунды, которые HDT заново проигрывает после перезапуска: они уже записаны (или потеряны), дубли не нужны.
@@ -385,6 +406,7 @@ namespace HSaiHelper.Hdt
 				Write(record);
 				BoardLibrary.Add(record);
 				Suspicion.OnCombat(record); // подозрительность стола соперника — боями, в фоне
+				Analysis.ExplainCombat(record); // почему шанс до боя разошёлся с прогнозом в бою
 				GameReview.AddCombat(record);
 			}
 		}

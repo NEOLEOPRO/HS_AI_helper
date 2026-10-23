@@ -49,7 +49,11 @@ namespace HSaiHelper.Hdt
 		private DateTime? _combatStart;
 		private ShopCards _shop = new ShopCards();
 		private string _precombatSignature;
-		private DateTime _lastPrecombat = DateTime.MinValue;
+		/// <summary>Текущая подпись для шансов до боя (стол, соперник) — если не равна посчитанной, показ «стол изменился».</summary>
+		private string _precombatWanted;
+		private readonly Settled _precombatSettled = new Settled();
+		private readonly Settled _fieldSettled = new Settled();
+		private readonly Settled _placementSettled = new Settled();
 
 		public void OnLoad()
 		{
@@ -58,6 +62,8 @@ namespace HSaiHelper.Hdt
 			BoardLibrary.EnsureLoaded();
 			// Горячая клавиша «свернуть/развернуть все окна HSAI» (настройки).
 			Hotkey.Pressed = () => HsaiOverlay.Instance.ToggleCollapseAll();
+			HsaiOverlay.Instance.CounterplayRequested += OnCounterplay;
+			SessionStats.Refresh(); // разбор сессии — по записям, при запуске и после каждой партии
 			var hotkeyError = Hotkey.Apply(Settings.Instance.CollapseHotkey);
 			if(hotkeyError != null)
 				ActivityFeed.Post(hotkeyError, ActivityLevel.Warning);
@@ -73,7 +79,8 @@ namespace HSaiHelper.Hdt
 				// Сводка короткая (2026-10-23: 3800 токенов → 19 с только на чтение в щадящем режиме): без пояснений, без повторов
 				// (тёмный дар уже в BoardNow), разбор партии — только после неё.
 				var lines = estimates.Lines.Concat(estimates.Pool).Concat(inGame ? Enumerable.Empty<string>() : estimates.Review)
-					.Where(l => !l.StartsWith("  heuristic") && !l.StartsWith("Dark Gift")).Select(l => l.Trim());
+					.Where(l => !l.StartsWith("  heuristic") && !l.StartsWith("Dark Gift"))
+					.Select(l => l.Trim().Replace(BuildAdvisor.HighlightOpen.ToString(), "").Replace(BuildAdvisor.HighlightClose.ToString(), " (in tavern now)"));
 				return ContextText(view, gameOver: !inGame) + string.Join("\n", lines);
 			});
 		}
@@ -100,6 +107,9 @@ namespace HSaiHelper.Hdt
 				var bgMenu = Core.Game.CurrentMode == Mode.BACON;
 				if(inGame && !_wasInGame)
 					NewGame();
+				if(!inGame && _wasInGame)
+					SessionStats.Refresh(); // партия закончилась — пересчитать разбор сессии
+				HsaiOverlay.Instance.SetSession(SessionStats.Lines);
 				_wasInGame = inGame;
 				Suspicion.InGame = inGame;
 				if(inGame)
@@ -138,6 +148,7 @@ namespace HSaiHelper.Hdt
 					_nextId = next;
 				TrackCombat();
 				MaybeStartPrecombat();
+				MaybeAdvice();
 				MaybeStartField();
 				MaybeRunPlacement();
 				var estimates = BuildEstimates(gameOver: false);
@@ -163,11 +174,19 @@ namespace HSaiHelper.Hdt
 			_nextId = 0;
 			_combatStart = null;
 			_precombatSignature = null;
+			_precombatWanted = null;
+			_precombatSettled.Reset();
+			_fieldSettled.Reset();
+			_placementSettled.Reset();
 			_placement = null;
 			_placementSignature = null;
 			GameReview.Reset();
 			OpeningAdvisor.Reset();
 			Suspicion.Reset();
+			Analysis.Reset();
+			_adviceSignature = null;
+			_advicesThisTurn = 0;
+			_adviceTurn = 0;
 			_shop = new ShopCards();
 		}
 
@@ -225,7 +244,8 @@ namespace HSaiHelper.Hdt
 			var usePre = pre != null && pre.Turn == _turn && pre.OpponentId == _nextId && !pre.Running && pre.Error == null ? pre : null;
 			var signature = string.Join(",", tiles.Select(t => $"{t["player_id"]}:{t["health"]}-{t["damage"]}+{t["armor"]}/{t["tier"]}"))
 							+ $"|{history.Count}|{_nextId}|{usePre?.Win:F2}";
-			if(signature == _placementSignature)
+			// Здоровье и тиры в таблице лидеров меняются пачкой в начале боя — считаем, когда 2 с без изменений.
+			if(signature == _placementSignature || !_placementSettled.Check(signature))
 				return;
 			_placementSignature = signature;
 			int me = _me, next = _nextId, cap = CurrentDamageCap();
@@ -233,7 +253,7 @@ namespace HSaiHelper.Hdt
 			{
 				try
 				{
-					_placement = PlacementModel.Run(tiles, history, me, next, usePre, cap);
+					_placement = PlacementModel.Run(tiles, history, me, next, usePre, cap, runs: 10000); // было 2000: розыгрыши дешёвые, разброс меньше
 				}
 				catch(Exception ex)
 				{
@@ -282,10 +302,14 @@ namespace HSaiHelper.Hdt
 				if(field != null && field.Boards > 0)
 					view.Lines.Add(L.T($"Твой стол против столов хода {field.Turn}: побед ≈{field.Win:P0}, поражений ≈{field.Loss:P0} · сильнее {field.Beats} из {field.Boards} (BobsBuddy)",
 						$"Your board vs turn {field.Turn} boards: ≈{field.Win:P0} wins, ≈{field.Loss:P0} losses · beats {field.Beats} of {field.Boards} (BobsBuddy)")
-						+ (field.Running ? " …" : ""));
+						+ (field.Running ? " …" : field.Signature != _fieldSignature ? L.T(" · стол изменился — пересчёт", " · board changed — recalculating") : ""));
 				else if(field?.Running == true)
 					view.Lines.Add(L.T("Твой стол против столов этого хода: считаю…", "Your board vs this turn's boards: calculating…"));
 				view.Lines.AddRange(OpeningAdvisor.Lines(_turn, _lobbyRaces)); // ходы 1–3: что купить, заморозка, план с тёмным даром
+				// Почему шанс до боя разошёлся с прогнозом в бою (после боя, Analysis).
+				var why = Analysis.Explanation(_turn);
+				if(why != null)
+					view.Lines.Add(why);
 				var gift = BoardNow.DarkGiftText(_turn);
 				if(gift != null)
 					view.Lines.Add(gift);
@@ -366,7 +390,6 @@ namespace HSaiHelper.Hdt
 		}
 
 		private string _fieldSignature;
-		private DateTime _fieldChanged = DateTime.MinValue;
 
 		/// <summary>Сила моего стола против поля: в таверне, когда стол не менялся 3 с (не на каждую покупку) и шансы до боя уже посчитаны.</summary>
 		private void MaybeStartField()
@@ -377,17 +400,70 @@ namespace HSaiHelper.Hdt
 			if(shop.Board.Count == 0)
 				return;
 			var signature = $"{_turn}|{shop.Signature}";
-			if(signature != _fieldSignature)
-			{
-				_fieldSignature = signature;
-				_fieldChanged = DateTime.Now;
-				return;
-			}
-			if((DateTime.Now - _fieldChanged).TotalSeconds < 3 || PrecombatEstimator.Field?.Signature == signature || PrecombatEstimator.Busy)
+			_fieldSignature = signature;
+			// Считаем, когда стол 2 с без изменений; пока идут шансы до боя — ждём (они важнее).
+			if(!_fieldSettled.Check(signature) || PrecombatEstimator.Field?.Signature == signature || PrecombatEstimator.Busy)
 				return;
 			var me = LobbyState.Players?.OfType<JObject>().FirstOrDefault(t => (int?)t["player_id"] == _me);
 			if(me != null)
-				PrecombatEstimator.StartField(_turn, me, _lobbyRaces, signature);
+				PrecombatEstimator.StartField(_turn, me, _lobbyRaces, signature, boards: 60); // все столы хода (до 60), а не 12
+		}
+
+		private string _adviceSignature;
+		private int _advicesThisTurn, _adviceTurn;
+		private readonly Settled _adviceSettled = new Settled();
+
+		/// <summary>
+		/// Советы ИИ каждый ход (галочка в окне «ИИ»): в таверне, когда стол, таверна и золото 2 с без изменений и шансы до боя
+		/// с этим соперником уже посчитаны (их похожие столы — противник для вариантов). Не больше двух за ход (после ролла — ещё один).
+		/// </summary>
+		private void MaybeAdvice()
+		{
+			if(!Settings.Instance.AiAutoAdvice || Core.Game.IsBattlegroundsCombatPhase || _turn < 2 || AiChat.Busy || AiServer.State != AiServerState.Ready)
+				return;
+			if(_adviceTurn != _turn)
+			{
+				_adviceTurn = _turn;
+				_advicesThisTurn = 0;
+			}
+			var pre = PrecombatEstimator.Current;
+			if(pre == null || pre.Running || pre.Error != null || pre.Turn != _turn || pre.OpponentId != _nextId || _precombatWanted != _precombatSignature || _advicesThisTurn >= 2)
+				return;
+			var shop = MyShopCards();
+			var signature = $"{_turn}|{shop.Signature}|{string.Join(",", shop.Offers)}|{shop.Gold}";
+			if(signature == _adviceSignature || !_adviceSettled.Check(signature))
+				return;
+			_adviceSignature = signature;
+			_advicesThisTurn++;
+			var tile = LobbyState.Players?.OfType<JObject>().FirstOrDefault(t => (int?)t["player_id"] == _nextId);
+			var me = LobbyState.Players?.OfType<JObject>().FirstOrDefault(t => (int?)t["player_id"] == _me);
+			Analysis.TavernAdvice(_turn, (int?)me?["tier"] ?? 1, shop.Gold, shop.UpgradeCost, LobbyState.HeroName((string)tile?["hero"]), pre.Samples);
+		}
+
+		/// <summary>Кнопка «как обыграть самого опасного»: соперник с наибольшим шансом на 1-е место (или самый сильный увиденный стол).</summary>
+		private void OnCounterplay()
+		{
+			try
+			{
+				var tiles = LobbyState.Players?.OfType<JObject>().Where(t => (int?)t["player_id"] != _me && (bool?)t["dead"] != true
+																		   && ((int?)t["health"] ?? 0) - ((int?)t["damage"] ?? 0) > 0).ToList();
+				if(tiles == null || tiles.Count == 0 || !Core.Game.IsBattlegroundsMatch)
+				{
+					AiChat.SystemNote(L.T("Нет партии или соперников.", "No game or opponents."));
+					return;
+				}
+				var p = _placement;
+				var threat = tiles.OrderByDescending(t => p != null && p.First.TryGetValue((int?)t["player_id"] ?? 0, out var f) ? f : 0)
+					.ThenByDescending(t => Suspicion.Of((int?)t["player_id"] ?? 0)?.Strength ?? -9).First();
+				int id = (int?)threat["player_id"] ?? 0;
+				var why = p != null && p.First.TryGetValue(id, out var first) ? $"1st place chance {first:P0}" : "strongest board seen";
+				var me = LobbyState.Players?.OfType<JObject>().FirstOrDefault(t => (int?)t["player_id"] == _me);
+				Analysis.Counterplay(_turn, (int?)me?["tier"] ?? 1, MyShopCards().Gold, id, LobbyState.HeroName((string)threat["hero"]), why);
+			}
+			catch(Exception ex)
+			{
+				Paths.Log("Counterplay: " + ex);
+			}
 		}
 
 		/// <summary>Пересчёт шансов до боя: в таверне, когда сменились соперник, его состав/тир или мой стол (не чаще раза в 3 с).</summary>
@@ -398,14 +474,15 @@ namespace HSaiHelper.Hdt
 			var tiles = LobbyState.Players?.OfType<JObject>().ToList();
 			var opponent = tiles?.FirstOrDefault(t => (int?)t["player_id"] == _nextId);
 			var me = tiles?.FirstOrDefault(t => (int?)t["player_id"] == _me);
-			if(opponent == null || me == null || PrecombatEstimator.Busy || (DateTime.Now - _lastPrecombat).TotalSeconds < 3)
+			if(opponent == null || me == null)
 				return;
-			var myBoard = string.Join(",", Core.Game.Player.Board.Where(e => e.IsMinion).Select(e => $"{e.CardId}:{e.Attack}/{e.Health}"));
-			var signature = $"{_turn}|{_nextId}|{opponent["tier"]}|{opponent["races"]?.ToString(Newtonsoft.Json.Formatting.None)}|{myBoard}";
-			if(signature == _precombatSignature)
+			// Стол (со щитами и перерождениями), рука, соперник и его тир/состав; считаем, когда всё это 2 с без изменений.
+			var hand = string.Join(",", Core.Game.Player.Hand.Select(e => e.CardId));
+			var signature = $"{_turn}|{_nextId}|{opponent["tier"]}|{opponent["races"]?.ToString(Newtonsoft.Json.Formatting.None)}|{MyShopCards().Signature}|{hand}";
+			_precombatWanted = signature;
+			if(signature == _precombatSignature || !_precombatSettled.Check(signature) || PrecombatEstimator.Busy)
 				return;
 			_precombatSignature = signature;
-			_lastPrecombat = DateTime.Now;
 			PrecombatEstimator.Start(_turn, opponent, me, LobbyState.HeroName((string)opponent["hero"]), _lobbyRaces);
 		}
 
@@ -507,6 +584,19 @@ namespace HSaiHelper.Hdt
 				sb.AppendLine(view.Odds + (view.OddsNote != null ? " (" + view.OddsNote.Trim() + ")" : ""));
 			foreach(var line in view.NextBrief)
 				sb.AppendLine(line.Trim());
+			// Гайды сборок (описание HDT + тексты ключевых карт): моя вероятная сборка и следующего соперника — из них модель выводит
+			// взаимодействия и противодействие, а не пересказывает правила.
+			if(!gameOver)
+			{
+				var myTile = tiles.FirstOrDefault(t => (int?)t["player_id"] == _me);
+				var nextTile = tiles.FirstOrDefault(t => (int?)t["player_id"] == _nextId);
+				var mine = myTile == null ? null : CompGuides.Match(myTile["races"] as JObject, MyShopCards().Board, 1).FirstOrDefault();
+				var theirs = nextTile == null ? null : CompGuides.Match(nextTile["races"] as JObject, LobbyState.Seen(_nextId)?.Value, 1).FirstOrDefault();
+				var guides = new[] { Analysis.GuideForAi(mine?.Guide, "My likely build guide"), Analysis.GuideForAi(theirs?.Guide, "Next opponent's likely build guide") }
+					.Where(x => x != null).ToList();
+				if(guides.Count > 0)
+					sb.Append("Build guides (HDT):\n" + string.Join("", guides));
+			}
 			return sb.ToString();
 		}
 
@@ -621,6 +711,13 @@ namespace HSaiHelper.Hdt
 			int id = (int?)next["player_id"] ?? 0;
 			view.Next.Add(L.T("⚔ Следующий: ", "⚔ Next: ") + $"{LobbyState.HeroName((string)next["hero"])} · {L.T("т", "t")}{(int?)next["tier"]} · {LobbyState.Composition(next["races"] as JObject)}");
 			SetOdds(view, id);
+			// Стол не виден, но сборка предсказана: 3 карты, которые могут перевернуть бой (токсичность, «бить первым», уничтожение).
+			var danger = Analysis.DangerCards(next, LobbyState.Seen(id)?.Value);
+			if(danger.Count > 0)
+			{
+				var line = L.T("  опасные карты его сборки: ", "  dangerous cards of their build: ") + string.Join(" · ", danger);
+				view.NextBrief.Add(line);
+			}
 			var ours = history.Where(h => (int?)h["owner_id"] == _me && (int?)h["opponentId"] == id).OrderBy(h => (int?)h["index"]).LastOrDefault();
 			view.NextBrief.Add(ours == null ? L.T("  раньше не встречались", "  haven't met yet") : L.T("  прошлый бой с ним: ", "  last fight with them: ") + Describe(ours, _me, id));
 			var his = history.Where(h => (int?)h["owner_id"] == id).OrderBy(h => (int?)h["index"]).LastOrDefault();
@@ -711,8 +808,10 @@ namespace HSaiHelper.Hdt
 			{
 				view.Odds = L.T($"Шансы до боя ≈ победа {r.Win:P0} · ничья {r.Tie:P0} · поражение {r.Loss:P0}",
 					$"Pre-combat odds ≈ win {r.Win:P0} · tie {r.Tie:P0} · loss {r.Loss:P0}");
-				view.OddsNote = L.T($"  грубо: мой стол против {r.Boards} похожих столов из записей; победа от {r.MinWin:P0} до {r.MaxWin:P0}",
-					$"  rough: my board vs {r.Boards} similar recorded boards; win {r.MinWin:P0}–{r.MaxWin:P0}");
+				view.OddsNote = L.T($"  грубо: твой стол против {r.Boards} похожих столов из записей; победа от {r.MinWin:P0} до {r.MaxWin:P0}",
+					$"  rough: your board vs {r.Boards} similar recorded boards; win {r.MinWin:P0}–{r.MaxWin:P0}")
+					+ (_precombatWanted != null && _precombatWanted != _precombatSignature
+						? L.T(" · стол изменился — пересчёт через 2 с без изменений", " · board changed — recalculating after 2 s without changes") : "");
 			}
 		}
 

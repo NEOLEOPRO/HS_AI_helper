@@ -28,6 +28,10 @@ Draft for the LLM (English — fewer tokens than Russian). Exact combat mechanic
 - The attack target is random among enemy minions; Taunt minions must be attacked first.
 - Keywords: Divine Shield (absorbs the first hit), Reborn (returns with 1 health), Poisonous (kills any minion it damages; permanent),
   Venomous (same, but removed after the first hit), Windfury (attacks twice), Deathrattle (on death), Start of Combat, Avenge (after N friendly deaths), Rally.
+- When effects happen: Battlecry — when the minion is played from hand during the player's turn in the tavern, never in combat
+  (so "Battlecries trigger twice", e.g. Brann Bronzebeard, is a tavern effect — passive in combat);
+  Deathrattle — when the minion dies or is destroyed (mostly in combat; "Deathrattles trigger an extra time", e.g. Titus Rivendare,
+  matters in combat — kill it first); Start of Combat, Avenge, Rally, "whenever this attacks" — in combat.
 - The side with minions left wins; if neither has any — a tie.
 - Damage to the loser = winner's tavern tier + sum of the tiers of the winner's surviving minions.
 - Damage cap per combat (logs): 5 early, then 10, then 15; removed when 4 players remain.

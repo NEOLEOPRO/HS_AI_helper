@@ -26,7 +26,7 @@ namespace HSaiHelper.Hdt
 	/// <summary>
 	/// Советы по сборке (2026-10-23): советовать то, что проще собрать. Для каждого гайда JeefHS — сколько золота
 	/// примерно стоит добрать ключевые карты: 3 за покупку, роллы до появления (1 / шанс за ролл по пулу), повышения до нужного тира;
-	/// ключевая карта в таверне прямо сейчас — подсветка «★»; разобранная (копий в пуле 0) — сборку не собрать.
+	/// карта сборки в таверне прямо сейчас — подсвечена цветом в перечислении (⟦…⟧ — разметка для окна, HsaiOverlay.FillLines); разобранная (копий в пуле 0) — сборку не собрать.
 	/// Безделушка, привязанная к типу, — бонус сборкам этого типа; не привязана — все сборки на равных (часто стоит переключиться).
 	/// Смена сборки: JeefHS при сильной экономике меняет весь стол за ход — советуем, когда другая сборка заметно дешевле
 	/// и хватает золота с продажей стола, или когда текущую не собрать (ключевая разобрана, тип собирают несколько соперников, стол слабее поля).
@@ -56,6 +56,9 @@ namespace HSaiHelper.Hdt
 			public bool TrinketFit;
 		}
 
+		/// <summary>Разметка подсветки «карта в таверне»: окно красит фрагмент цветом, в сводке для ИИ — «(in tavern now)».</summary>
+		public const char HighlightOpen = '⟦', HighlightClose = '⟧';
+
 		public static IEnumerable<string> Lines(BuildState s)
 		{
 			if(CompGuides.All.Count == 0)
@@ -75,17 +78,14 @@ namespace HSaiHelper.Hdt
 			{
 				var mark = p == current ? L.T(" ← твоя", " ← yours") : "";
 				var trinket = p.TrinketFit ? L.T(" · под безделушку", " · fits your trinket") : "";
+				// Карты в таверне — первыми и цветом (просьба: подсветка в перечислении, а не отдельной строкой); дополнительные — тоже, с «+».
+				var parts = p.InTavern.Select(c => $"{HighlightOpen}«{Name(c)}»{HighlightClose}")
+					.Concat(AddonInTavern(p.Guide, s, myCounts).Select(c => $"+{HighlightOpen}«{Name(c)}»{HighlightClose}"))
+					.Concat(p.Parts).Take(4).ToList();
 				yield return $"  «{p.Guide.Name}» [{p.Guide.TierText}] · " + L.T($"есть {p.Owned}/{p.CoreCount}", $"have {p.Owned}/{p.CoreCount}")
 							 + (p.Exhausted.Count > 0 ? "" : $" · ≈{p.Gold:F0}" + L.T(" зол.", " gold")) + trinket + mark
-							 + (p.Parts.Count > 0 ? ": " + string.Join(", ", p.Parts.Take(3)) : "");
+							 + (parts.Count > 0 ? ": " + string.Join(", ", parts) : "");
 			}
-
-			// Подсветка: карты из первых трёх сборок (и моей), которые прямо сейчас в таверне.
-			var highlighted = new HashSet<string>();
-			foreach(var p in ranked.Take(3).Concat(current == null ? new Plan[0] : new[] { current }).Distinct())
-				foreach(var c in p.InTavern.Concat(AddonInTavern(p.Guide, s, myCounts)))
-					if(highlighted.Add(c.Id + "|" + p.Guide.Name))
-						yield return L.T($"★ в таверне: «{Name(c)}» — для «{p.Guide.Name}»", $"★ in the tavern: \"{Name(c)}\" — for \"{p.Guide.Name}\"");
 
 			var reason = SwitchReason(current, ranked[0], s);
 			if(reason != null)
@@ -148,7 +148,6 @@ namespace HSaiHelper.Hdt
 				if(s.Offers.Contains(c.Id))
 				{
 					plan.InTavern.Add(c);
-					plan.Parts.Add(L.T($"«{Name(c)}» ★ в таверне", $"\"{Name(c)}\" ★ in the tavern"));
 					continue;
 				}
 				needTier = Math.Max(needTier, c.TechLevel);
