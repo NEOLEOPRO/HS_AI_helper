@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Плагины HSaiHelper для Hearthstone Deck Tracker.
+    HDT работает на .NET Framework 4.7.2, поэтому и плагин собирается под net472.
+    Все библиотеки HDT берутся из установленного HDT и НЕ копируются к плагину (Private=false).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <AssemblyName>HSaiHelper.Hdt</AssemblyName>
+    <RootNamespace>HSaiHelper.Hdt</RootNamespace>
+    <Version>1.2.0</Version>
+    <HdtDir>$(LOCALAPPDATA)\HearthstoneDeckTracker\current</HdtDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="HearthstoneDeckTracker"><HintPath>$(HdtDir)\HearthstoneDeckTracker.exe</HintPath><Private>false</Private></Reference>
+    <Reference Include="HearthDb"><HintPath>$(HdtDir)\HearthDb.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="HearthMirror"><HintPath>$(HdtDir)\HearthMirror.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BobsBuddy"><HintPath>$(HdtDir)\BobsBuddy.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="untapped-scry-dotnet"><HintPath>$(HdtDir)\untapped-scry-dotnet.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(HdtDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+</Project>
