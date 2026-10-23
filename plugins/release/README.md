@@ -12,7 +12,7 @@
   только процессор, но медленнее).
 
 ## Установка — 3 шага
-1. **Скачайте** архив `HSaiHelper-<версия>.zip` со страницы релизов: https://github.com/NEOLEOPRO/HSaiHelper/releases — и **распакуйте** его в любую папку
+1. **Скачайте** архив `HSaiHelper-<версия>.zip` со страницы релизов: https://github.com/NEOLEOPRO/HS_AI_helper/releases — и **распакуйте** его в любую папку
    (правой кнопкой → «Извлечь все»). Запускать прямо из архива нельзя.
 2. Дважды щёлкните **`Install.cmd`**. Откроется чёрное окно, в конце будет «Готово». Нажмите любую клавишу.
    *Если Windows покажет «Windows защитила ваш компьютер» — «Подробнее» → «Выполнить в любом случае».*
@@ -65,7 +65,7 @@
 
 Хотите помочь сделать подсказки и ИИ точнее? «Настройки» → **«Подготовить данные для проекта»** — получится архив без ников,
 точного времени и точного MMR (MMR — диапазоном); вопросы к ИИ и заметки — только если поставите галочку. Создайте Issue «Данные партий»
-на https://github.com/NEOLEOPRO/HSaiHelper/issues/new/choose и перетащите туда архив. Там же — сообщить об ошибке или предложить идею.
+на https://github.com/NEOLEOPRO/HS_AI_helper/issues/new/choose и перетащите туда архив. Там же — сообщить об ошибке или предложить идею.
 
 ---
 
@@ -75,7 +75,7 @@ A [Hearthstone Deck Tracker](https://hsdecktracker.net) plugin: lobby, pre-comba
 you can ask during the game. **Free, runs entirely on your PC, read-only** — it never clicks for you or touches the game or its network.
 
 ## Install — 3 steps
-1. **Download** `HSaiHelper-<version>.zip` from https://github.com/NEOLEOPRO/HSaiHelper/releases and **extract** it (right-click → Extract All).
+1. **Download** `HSaiHelper-<version>.zip` from https://github.com/NEOLEOPRO/HS_AI_helper/releases and **extract** it (right-click → Extract All).
 2. Double-click **`Install.cmd`**. *If Windows SmartScreen appears: More info → Run anyway.*
 3. **Restart HDT** → Options → Tracker → **Plugins** → enable **HSAI Recorder** and **HSAI Lobby**.
 
@@ -97,4 +97,4 @@ Battlegrounds; Settings → reset window positions. "AI not installed" — run `
 ## Your data
 Everything stays in `%APPDATA%\HSaiHelper`; nothing is sent automatically. To help the project: Settings → **Prepare data for the
 project** — an archive without names, exact times or exact MMR (MMR as a range); your AI questions/notes only if you tick the box.
-Open a "Game data" issue at https://github.com/NEOLEOPRO/HSaiHelper/issues/new/choose and drop the archive there (bugs and ideas — same place).
+Open a "Game data" issue at https://github.com/NEOLEOPRO/HS_AI_helper/issues/new/choose and drop the archive there (bugs and ideas — same place).
